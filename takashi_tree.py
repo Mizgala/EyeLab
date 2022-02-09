@@ -2,44 +2,66 @@
 import numpy as np
 
 
-def calculate_L(r):
+class Q:
+    def __init__(self, v_type="artery"):
+        self.r_1 = 54.0
+        self.v_1 = 2.055
+        self.v_type = v_type
+
+    def calc_v_g(self, g, r):
+        a = pow(2, - (g - 1))
+        b = self.r_1 / r
+        c = self.v_1
+        return a * pow(b, 2) * c
+
+    def calc_q(self, g, r):
+        return np.pi * pow(r, 2) * self.calc_v_g(g, r)
+
+
+def calc_l(r):
     return 7.4 * pow(r, 1.15)
 
 
-class Q:
-    def __init__(self, r_1, v_1):
-        self.r_1 = r_1
-        self.v_1 = v_1
+def calc_mu(r, v_type):
+    if v_type == "artery":
+        mu_inf = 1.09 * np.exp(0.024 * 57.4)
+    elif v_type == "vein":
+        mu_inf = 1.09 * np.exp(0.024 * 60.7)
+    else:
+        mu_inf = 1.09 * np.exp(0.024 * 120.0)
 
-    def calculate_v_g(self, g, r_g):
-        a = pow(2, -(g-1))
-        b = pow(self.r_1/r_g, 2)
-        return a * b * self.v_1
-
-    def eval(self, g, r_g):
-        return np.pi * pow(r_g, 2) * self.calculate_v_g(g, r_g)
+    return mu_inf / pow(1 + (4.29 / r), 2)
 
 
-def delta_p_inner(g, r, u):
-    a = 8 * u * calculate_L(r) * q.eval(g, r)
-    return a / (np.pi * pow(r, 4))
+def delta_p(q, g, r):
+    r = micro(r)
+    a = 8
+    b = calc_mu(r, q.v_type)
+    c = calc_l(r)
+    d = q.calc_q(g, r)
+    num = a * b * c * d
+    den = np.pi * pow(r, 4)
+    return num / den
 
 
-def delta_p(g):
-    return delta_p_inner(gs[g], diams[g - 1] * 0.5, viscs[g - 1])
+def centi(n):
+    return n * 0.01
+
+def mili(n):
+    return n * 0.001
+
+def micro(n):
+    return n * 0.000001
 
 
-# hct recommendations for now: 57.4 in arteries, 60.7 in veins, good luck in near capillaries
-
-gs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
-
-diams = [108, 84.7, 66.4, 52.1, 40.8, 32.0, 25.1, 19.7, 15.4, 12.1, 9.5, 7.4, 5.8, 5.1, 5.0,
-         6.2, 7.9, 10.1, 12.9, 16.5, 21.0, 26.8, 34.2, 43.6, 55.6, 70.9, 90.4, 115.3, 147.0]
-
-viscs = [3.7, 3.6, 3.4, 3.2, 2.9, 2.7, 2.4, 2.1, 1.8, 1.5, 1.2, 0.9, 2.5, 4.2, 4.6,
-         2.8, 1.1, 1.4, 1.7, 2.0, 2.3, 2.7, 3.0, 3.2, 3.5, 3.7, 3.9, 4.0, 4.2]
-
-lens = [726.9, 549.6, 415.5, 314.1, 237.5, 179.5, 135.7, 102.6, 77.6, 58.7, 44.3, 33.5, 25.3, 21.7, 500.0,
-        27.3, 36.1, 47.8, 63.2, 83.6, 110.6, 146.3, 193.5, 255.9, 338.5, 447.8, 592.3, 783.4, 1036.2]
-
-q = Q(diams[0] * 0.5, 0.000188)
+def delta_p_m(mu_inf, r_1, v_1, g, r):
+    delta = 4.29
+    a = mu_inf * 7.4
+    b = a * pow(r_1, 2)
+    c = b * v_1
+    num = c * pow(r, 1.15)
+    a = pow(2, g-1)
+    b = a * pow(r, 2)
+    c = r * r + 2 * r * delta + delta * delta
+    den = b * c
+    return num / den

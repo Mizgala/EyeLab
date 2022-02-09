@@ -8,6 +8,6 @@ takeshi_tree: A set of functions to model the blood flow, pressure, and
 img2tree: A library to convert an image of a tree structure to a tree
     representation (current objective is a binary tree)
 
-Contributors:
-    Kyle Mizgala
+Collaborators:
+    Kyle Mizgala,
     Anthony Riggs
