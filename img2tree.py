@@ -5,49 +5,81 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
 
-class Tree:
-    def __init__(self, length=0.0, radius=0.0, left: "Tree" = None, right: "Tree" = None):
-        self.length = length
-        self.radius = radius
-        self.left = left
-        self.right = right
-        if self.right is None and self.left is None:
-            self.is_node = True
+class Root:
+    def __init__(self, start, end, r=0.0, branches: "Tree" = None):
+        self.start = start
+        self.end = end
+        self.r = r
+        self.branches = branches
+        if branches is None:
+            self.has_branches = False
         else:
-            self.is_node = False
+            self.has_branches = True
 
-    def add_left(self, left: "Tree" = None):
-        self.left = left
-        if self.is_node:
-            self.is_node = False
+    def add_branches(self, branches: "Tree"):
+        self.branches = branches
+        self.has_branches |= True
 
-    def add_right(self, right: "Tree" = None):
-        self.right = right
-        if self.is_node:
-            self.is_node = False
+    def get_length(self):
+        return dist(self.start, self.end)
+
+
+class Tree:
+    def __init__(self, split_point, r=0.0, branches: "(Tree, Tree)" = None):
+        self.split_point = split_point
+        self.r = r
+        self.branches = branches
+        if branches is None:
+            self.has_branches = False
+        else:
+            self.has_branches = True
+
+    def split(self, branches):
+        self.branches = branches
+        self.has_branches = True
+
+    def length_top(self):
+        if self.has_branches:
+            res = dist(self.split_point, self.branches[0].split_point)
+        else:
+            res = 0.0
+        return res
+
+    def length_bot(self):
+        if self.has_branches:
+            res = dist(self.split_point, self.branches[1].split_point)
+        else:
+            res = 0.0
+        return res
 
 
 def import_image(path="images/g1.png"):
+    # import an image as an Image object
     return Image.open(path)
 
 
 def image2a(image):
+    # convert an Image object to a numpy array of color values
     return np.asarray(image)
 
 
 def bw2bin(b):
+    # convert boolean black and white values to their binary equivalent
     return 1 if b else 0
 
 
 def bin2bw(b):
+    # convert binary black and white values to their boolean equivalent
     return True if b == 1 else False
 
 
 def flip(b):
+    # flip a bit
     return 1 if b == 0 else 0
 
 
 def array_map(f, a):
+    # apply the function f to every value in array a
     res = np.zeros(a.shape)
     shape = a.shape
     res_l = res.reshape(np.prod(shape))
@@ -58,6 +90,7 @@ def array_map(f, a):
 
 
 def a2coords(a):
+    # return a numpy array containing all coordinates in an array a where the value is 1
     shape = a.shape
     res = []
     for i in range(0, shape[0]):
@@ -68,6 +101,7 @@ def a2coords(a):
 
 
 def split_coords(cs):
+    # np.array([x, y]) -> np.array(xs), np.array(ys)
     xs = []
     ys = []
     for c in cs:
@@ -77,6 +111,7 @@ def split_coords(cs):
 
 
 def zip_coords(xs, ys):
+    # np.array(xs), np.array(ys) -> np.array([x, y])
     res = []
     for i in range(0, len(xs)):
         res.append([xs[i], ys[i]])
@@ -84,6 +119,7 @@ def zip_coords(xs, ys):
 
 
 def p2ys(p, xs):
+    # return a list of y values for p(x) for x in xs
     ys = []
     for x in xs:
         ys.append(p[0] * x + p[1])
@@ -91,11 +127,14 @@ def p2ys(p, xs):
 
 
 def image2line(image):
+    # convert an Image to a line equation
     xs, ys = split_coords(image2coords(image))
     return np.polyfit(xs, ys, 1)
 
 
 def image2coords(image):
+    # convert an Image to black and white, binarize it, flip the values,
+    # and convert to a list of coordinates where the value is 1
     a = image2a(image.convert("1"))
     a = array_map(bw2bin, a)
     a = array_map(flip, a)
@@ -103,6 +142,7 @@ def image2coords(image):
 
 
 def point_width_over_x(coords):
+    # return a list of tuples (a, b) where a is the x value and b is the number of y values found at x
     xs, ys = split_coords(coords)
     xs_u = list(set(xs.flatten()))
     ys_split = []
@@ -119,6 +159,7 @@ def point_width_over_x(coords):
 
 
 def bound_coords(coords, axis, c_min, c_max):
+    # restrict a list of coordinates to a subset along a given axis
     res = list(coords)
     d = -1
     if axis == 'x':
@@ -133,6 +174,7 @@ def bound_coords(coords, axis, c_min, c_max):
 
 
 def get_corners(path, graph_res=False):
+    # return a list of corners found in the image at path
     img = cv2.imread(path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = np.float32(gray)
@@ -151,12 +193,14 @@ def get_corners(path, graph_res=False):
 
 
 def dist(a, b):
+    # distance between two points
     y = b[1] - a[1]
     x = b[0] - a[0]
     return pow(pow(y, 2) + pow(x, 2), 0.5)
 
 
 def get_r2(p, coords):
+    # calculate the r2 value for a p
     rss = 0.0
     tss = 0.0
     xs, ys = split_coords(coords)
@@ -168,6 +212,8 @@ def get_r2(p, coords):
 
 
 def prune_corners(coords, prune, lazy=True):
+    # remove "duplicate" corners
+    # lazy removes the weird phantom corner
     indexes = list(range(0, len(coords)))
     i_pairs = [(a, b) for a in indexes for b in indexes]
     i_pairs = list(filter(lambda p: p[0] != p[1], i_pairs))
@@ -187,6 +233,7 @@ def prune_corners(coords, prune, lazy=True):
 
 
 def graph(image, path):
+    # graph an image along with the generated representation
     a_g1 = image2a(image.convert("1"))
     res = array_map(bw2bin, a_g1)
     res = array_map(flip, res)
@@ -197,6 +244,7 @@ def graph(image, path):
 def graph_coords(image, path, coords,
                  bound_y=False, lock_aspect_ratio=False,
                  graph_type="line"):
+    # graph an image and something else
     a_g1 = image2a(image.convert("1"))
     xs, ys = split_coords(coords)
     p = np.polyfit(xs, ys, 1)

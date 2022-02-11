@@ -1,4 +1,8 @@
 scratch.py
 venv/*
+.idea/*
 
 images/res*
+
+*.iml
+*.xml
