@@ -1,6 +1,6 @@
 import numpy as np
+import cv2
 from PIL import Image
-from PIL import ImageOps
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
@@ -9,7 +9,7 @@ def import_image(path="images/g1.png"):
     return Image.open(path)
 
 
-def to_array(image):
+def image2a(image):
     return np.asarray(image)
 
 
@@ -54,6 +54,13 @@ def split_coords(cs):
     return np.array(xs), np.array(ys)
 
 
+def zip_coords(xs, ys):
+    res = []
+    for i in range(0, len(xs)):
+        res.append([xs[i], ys[i]])
+    return np.array(res)
+
+
 def p2ys(p, xs):
     ys = []
     for x in xs:
@@ -62,38 +69,94 @@ def p2ys(p, xs):
 
 
 def image2line(image):
-    a_g1 = to_array(image.convert("1"))
-    res = array_map(bw2bin, a_g1)
-    res = array_map(flip, res)
-    res = a2coords(res)
-    xs, ys = split_coords(res)
+    xs, ys = split_coords(image2coords(image))
     return np.polyfit(xs, ys, 1)
 
 
-def graph(image):
-    a_g1 = to_array(image.convert("1"))
+def image2coords(image):
+    a = image2a(image.convert("1"))
+    a = array_map(bw2bin, a)
+    a = array_map(flip, a)
+    return a2coords(a)
+
+
+def point_width_over_x(coords):
+    xs, ys = split_coords(coords)
+    xs_u = list(set(xs.flatten()))
+    ys_split = []
+    for x in xs_u:
+        tmp = []
+        for c in coords:
+            if c[0] == x:
+                tmp.append(c[1])
+        ys_split.append(tmp)
+    res = []
+    for i in range(0, len(xs_u)):
+        res.append([xs_u[i], len(ys_split[i])])
+    return res
+
+
+def bound_coords(coords, axis, c_min, c_max):
+    res = list(coords)
+    d = -1
+    if axis == 'x':
+        d = 0
+    elif axis == 'y':
+        d = 1
+
+    if d != -1:
+        res = list(filter((lambda c: c_min <= c[d] <= c_max), res))
+
+    return np.array(res)
+
+
+def graph(image, path):
+    a_g1 = image2a(image.convert("1"))
     res = array_map(bw2bin, a_g1)
     res = array_map(flip, res)
     res = a2coords(res)
-    xs, ys = split_coords(res)
+    graph_coords(image, path, res, True, True)
+
+
+def get_corners(path):
+    img = cv2.imread(path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = np.float32(gray)
+    dst = cv2.cornerHarris(gray, 5, 3, 0.04)
+    ret, dst = cv2.threshold(dst, 0.1 * dst.max(), 255, 0)
+    dst = np.uint8(dst)
+    ret, labels, stats, centroids = cv2.connectedComponentsWithStats(dst)
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.001)
+    return cv2.cornerSubPix(gray, np.float32(centroids), (5, 5), (-1, -1), criteria)
+
+
+def graph_coords(image, path, coords,
+                 bound_y=False, lock_aspect_ratio=False,
+                 graph_type="line"):
+    a_g1 = image2a(image.convert("1"))
+    xs, ys = split_coords(coords)
     p = np.polyfit(xs, ys, 1)
     ys_gen = p2ys(p, xs)
 
     shape = a_g1.shape
 
     fig, (ax1, ax2) = plt.subplots(1, 2)
-    fig.suptitle('img2line')
 
-    img = mpimg.imread("images/g1.png")
+    img = mpimg.imread(path)
     ax1.imshow(img)
     ax1.set_xlim([0, shape[1]])
     ax1.set_ylim([0, shape[0]])
     ax1.invert_yaxis()
 
-    ax2.plot(xs, ys_gen)
+    if graph_type == "line":
+        ax2.plot(xs, ys_gen)
+    elif graph_type == "scatter":
+        ax2.scatter(xs, ys)
     ax2.set_xlim([0, shape[1]])
-    ax2.set_ylim([0, shape[0]])
+    if bound_y:
+        ax2.set_ylim([0, shape[0]])
     ax2.invert_yaxis()
-    ax2.set_aspect('equal')
+    if lock_aspect_ratio:
+        ax2.set_aspect('equal')
 
     plt.show()
