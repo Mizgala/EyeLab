@@ -5,6 +5,28 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
 
+class Tree:
+    def __init__(self, length=0.0, radius=0.0, left: "Tree" = None, right: "Tree" = None):
+        self.length = length
+        self.radius = radius
+        self.left = left
+        self.right = right
+        if self.right is None and self.left is None:
+            self.is_node = True
+        else:
+            self.is_node = False
+
+    def add_left(self, left: "Tree" = None):
+        self.left = left
+        if self.is_node:
+            self.is_node = False
+
+    def add_right(self, right: "Tree" = None):
+        self.right = right
+        if self.is_node:
+            self.is_node = False
+
+
 def import_image(path="images/g1.png"):
     return Image.open(path)
 
@@ -110,14 +132,6 @@ def bound_coords(coords, axis, c_min, c_max):
     return np.array(res)
 
 
-def graph(image, path):
-    a_g1 = image2a(image.convert("1"))
-    res = array_map(bw2bin, a_g1)
-    res = array_map(flip, res)
-    res = a2coords(res)
-    graph_coords(image, path, res, True, True)
-
-
 def get_corners(path, graph_res=False):
     img = cv2.imread(path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -142,6 +156,17 @@ def dist(a, b):
     return pow(pow(y, 2) + pow(x, 2), 0.5)
 
 
+def get_r2(p, coords):
+    rss = 0.0
+    tss = 0.0
+    xs, ys = split_coords(coords)
+    y_mean = np.mean(ys)
+    for i in range(0, len(xs)):
+        rss += pow(ys[i] - (xs[i] * p[0] + p[1]), 2)
+        tss += pow(ys[i] - y_mean, 2)
+    return 1 - (rss/tss)
+
+
 def prune_corners(coords, prune, lazy=True):
     indexes = list(range(0, len(coords)))
     i_pairs = [(a, b) for a in indexes for b in indexes]
@@ -159,6 +184,14 @@ def prune_corners(coords, prune, lazy=True):
 
     indexes = list(filter(lambda i: i not in is_to_remove, indexes))
     return np.array(list(map(lambda i: coords[i], indexes)))
+
+
+def graph(image, path):
+    a_g1 = image2a(image.convert("1"))
+    res = array_map(bw2bin, a_g1)
+    res = array_map(flip, res)
+    res = a2coords(res)
+    graph_coords(image, path, res, True, True)
 
 
 def graph_coords(image, path, coords,
