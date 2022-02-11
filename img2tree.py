@@ -118,7 +118,7 @@ def graph(image, path):
     graph_coords(image, path, res, True, True)
 
 
-def get_corners(path):
+def get_corners(path, graph_res=False):
     img = cv2.imread(path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = np.float32(gray)
@@ -127,7 +127,38 @@ def get_corners(path):
     dst = np.uint8(dst)
     ret, labels, stats, centroids = cv2.connectedComponentsWithStats(dst)
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.001)
-    return cv2.cornerSubPix(gray, np.float32(centroids), (5, 5), (-1, -1), criteria)
+    corners = cv2.cornerSubPix(gray, np.float32(centroids), (5, 5), (-1, -1), criteria)
+    if graph_res:
+        img[dst > 0.1 * dst.max()] = [0, 0, 255]
+        cv2.imshow('image', img)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+    return corners
+
+
+def dist(a, b):
+    y = b[1] - a[1]
+    x = b[0] - a[0]
+    return pow(pow(y, 2) + pow(x, 2), 0.5)
+
+
+def prune_corners(coords, prune, lazy=True):
+    indexes = list(range(0, len(coords)))
+    i_pairs = [(a, b) for a in indexes for b in indexes]
+    i_pairs = list(filter(lambda p: p[0] != p[1], i_pairs))
+    dists = []
+    for i in i_pairs:
+        dists.append(dist(coords[i[0]], coords[i[1]]))
+    cds = zip_coords(i_pairs, dists)
+    is_to_remove = [0]
+    for cd in cds:
+        inds = cd[0]
+        if inds[0] not in is_to_remove and inds[1] not in is_to_remove:
+            if cd[1] < prune:
+                is_to_remove.append(inds[1])
+
+    indexes = list(filter(lambda i: i not in is_to_remove, indexes))
+    return np.array(list(map(lambda i: coords[i], indexes)))
 
 
 def graph_coords(image, path, coords,
