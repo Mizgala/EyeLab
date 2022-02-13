@@ -6,9 +6,8 @@ import matplotlib.image as mpimg
 
 
 class Root:
-    def __init__(self, start, end, r=0.0, branches: "Tree" = None):
-        self.start = start
-        self.end = end
+    def __init__(self, root, r=0.0, branches: "Tree" = None):
+        self.root = root
         self.r = r
         self.branches = branches
         if branches is None:
@@ -21,12 +20,12 @@ class Root:
         self.has_branches |= True
 
     def get_length(self):
-        return dist(self.start, self.end)
+        return branch_length(self.root)
 
 
 class Tree:
-    def __init__(self, split_point, r=0.0, branches: "(Tree, Tree)" = None):
-        self.split_point = split_point
+    def __init__(self, branch, r=0.0, branches: "(Tree, Tree)" = None):
+        self.branch = branch
         self.r = r
         self.branches = branches
         if branches is None:
@@ -38,19 +37,12 @@ class Tree:
         self.branches = branches
         self.has_branches = True
 
-    def length_top(self):
-        if self.has_branches:
-            res = dist(self.split_point, self.branches[0].split_point)
-        else:
-            res = 0.0
-        return res
+    def get_length(self):
+        return branch_length(self.branch)
 
-    def length_bot(self):
-        if self.has_branches:
-            res = dist(self.split_point, self.branches[1].split_point)
-        else:
-            res = 0.0
-        return res
+
+def branch_length(branch):
+    return dist(branch[0], branch[1])
 
 
 def import_image(path="images/g1.png"):
@@ -241,7 +233,7 @@ def prune_corners(coords, prune, lazy=True):
     return np.array(list(map(lambda i: coords[i], indexes)))
 
 
-def gen_root(corners, coords):
+def gen_root(corners):
     scs = list(sorted(corners, key=lambda c: c[0]))
     return Root(scs[0], scs[1], branches=None)
 
@@ -256,7 +248,7 @@ def gen_branches(corners, coords):
         xs, ys = split_coords(tmp_coords)
         p = np.polyfit(xs, ys, 1)
         prs.append([cp, abs(get_r2(p, tmp_coords))])
-    prs = list(sorted(prs, key=lambda pr: prs[1], reverse=False))
+    prs = list(sorted(prs, key=lambda pr: pr[1], reverse=False))
     ps, _ = split_coords(prs)
     return ps
 
@@ -265,27 +257,36 @@ def are_points_equal(p1, p2):
     return p1[0] == p2[0] and p1[1] == p2[1]
 
 
-def eval_branch_acc(branch, coords):
-    bcs = double_bound_coords(coords,
-                              [branch[0][0]-10, branch[0][1]-10],
-                              [branch[1][0]+10, branch[1][1]+10])
-    xs = list(range(int(branch[0][0]), int(branch[1][0])))
+def branch_midpoint(branch):
     p = points2line(branch[0], branch[1])
-    fs = p2ys(p, xs)
-    _, ys = split_coords(bcs)
-    diffs = []
-    for i in range(0, len(xs)):
-        diffs += pow(fs[i] - ys[i], 2)
-    return 1 / (sum(diffs) + 0.00001)
+    dist_x = branch[1][0] - branch[0][0]
+    return np.array([0.5 * dist_x + branch[0][0], p[0] * (0.5 * dist_x + branch[0][0]) + p[1]])
 
 
-def are_branches_equal(b1, b2):
-    return are_points_equal(b1[0], b2[0]) and are_points_equal(b1[1], b2[1])
+def is_coord_in_ellipse(coord, h, k, r_x, r_y):
+    a = pow(coord[0] - h, 2) / pow(r_x, 2)
+    b = pow(coord[1] - k, 2) / pow(r_y, 2)
+    return a + b <= 1
 
 
-def link_branches(b1, b2):
-    # Assumes that b1 < b2 with respect to x
-    return np.array([b1[0], b2[1]])
+def eval_branch_acc(branch, coords, d_r_x, r_y):
+    r_x = branch_length(branch) + d_r_x
+    origin = branch_midpoint(branch)
+    score = 0.0
+    for c in coords:
+        if is_coord_in_ellipse(c, origin[0], origin[1], r_x, r_y):
+            score += 1.0
+    return score / branch_length(branch)
+
+
+def filter_branches(branches, coords, n, d_r_x=20, r_y=50):
+    bes = []
+    for b in branches:
+        bes.append([b, eval_branch_acc(b, coords, d_r_x, r_y)])
+    bes = list(sorted(bes, key=lambda be: be[1], reverse=True))
+    bes = bes[:n]
+    res = list(map(lambda be: be[0], bes))
+    return np.array(res)
 
 
 def graph(image, path):
@@ -295,6 +296,50 @@ def graph(image, path):
     res = array_map(flip, res)
     res = a2coords(res)
     graph_coords(image, path, res, True, True)
+
+
+def graph_branches(path):
+    print("Generating first plot...")
+    image = import_image(path)
+    coords = image2coords(image)
+    a_g1 = image2a(image.convert("1"))
+
+    shape = a_g1.shape
+
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+
+    img = mpimg.imread(path)
+    ax1.imshow(img)
+    ax1.set_xlim([0, shape[1]])
+    ax1.set_ylim([0, shape[0]])
+    ax1.invert_yaxis()
+    print("First plot complete!")
+
+    print("Preparing data for second plot...")
+    print("Finding corners...")
+    corners = get_corners(path)
+    corners = prune_corners(corners, 20)
+    print("Corners ready!")
+
+    print("Building branches...")
+    branches = gen_branches(corners, coords)
+    print("Branches built!")
+
+    print("Filtering branches...")
+    branches = filter_branches(branches, coords, len(corners) - 1)
+    print("Final branches ready!")
+    print("Data ready!")
+
+    print("Generating second plot...")
+    for b in branches:
+        ax2.plot([b[0][0], b[1][0]], [b[0][1], b[1][1]])
+    ax2.set_xlim([0, shape[1]])
+    ax2.set_ylim([0, shape[0]])
+    ax2.invert_yaxis()
+    ax2.set_aspect('equal')
+    print("Second plot complete!")
+
+    plt.show()
 
 
 def graph_coords(image, path, coords,
