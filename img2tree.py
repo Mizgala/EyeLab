@@ -132,6 +132,10 @@ def image2line(image):
     return np.polyfit(xs, ys, 1)
 
 
+def points2line(p1, p2):
+    return np.polyfit([p1[0], p2[0]], [p1[1], p2[1]], 1)
+
+
 def image2coords(image):
     # convert an Image to black and white, binarize it, flip the values,
     # and convert to a list of coordinates where the value is 1
@@ -171,6 +175,11 @@ def bound_coords(coords, axis, c_min, c_max):
         res = list(filter((lambda c: c_min <= c[d] <= c_max), res))
 
     return np.array(res)
+
+
+def double_bound_coords(coords, c1, c2):
+    tmp_coords = bound_coords(coords, 'x', min(c1[0], c2[0]), max(c1[0], c2[0]))
+    return bound_coords(tmp_coords, 'y', min(c1[1], c2[1]), max(c1[1], c2[1]))
 
 
 def get_corners(path, graph_res=False):
@@ -232,6 +241,53 @@ def prune_corners(coords, prune, lazy=True):
     return np.array(list(map(lambda i: coords[i], indexes)))
 
 
+def gen_root(corners, coords):
+    scs = list(sorted(corners, key=lambda c: c[0]))
+    return Root(scs[0], scs[1], branches=None)
+
+
+def gen_branches(corners, coords):
+    c_pairs = [(a, b) for a in corners for b in corners]
+    c_pairs = list(filter(lambda c: not are_points_equal(c[0], c[1]), c_pairs))
+    c_pairs = list(filter(lambda c: c[0][0] < c[1][0], c_pairs))
+    prs = []
+    for cp in c_pairs:
+        tmp_coords = bound_coords(coords, 'x', cp[0][0], cp[1][0])
+        xs, ys = split_coords(tmp_coords)
+        p = np.polyfit(xs, ys, 1)
+        prs.append([cp, abs(get_r2(p, tmp_coords))])
+    prs = list(sorted(prs, key=lambda pr: prs[1], reverse=False))
+    ps, _ = split_coords(prs)
+    return ps
+
+
+def are_points_equal(p1, p2):
+    return p1[0] == p2[0] and p1[1] == p2[1]
+
+
+def eval_branch_acc(branch, coords):
+    bcs = double_bound_coords(coords,
+                              [branch[0][0]-10, branch[0][1]-10],
+                              [branch[1][0]+10, branch[1][1]+10])
+    xs = list(range(int(branch[0][0]), int(branch[1][0])))
+    p = points2line(branch[0], branch[1])
+    fs = p2ys(p, xs)
+    _, ys = split_coords(bcs)
+    diffs = []
+    for i in range(0, len(xs)):
+        diffs += pow(fs[i] - ys[i], 2)
+    return 1 / (sum(diffs) + 0.00001)
+
+
+def are_branches_equal(b1, b2):
+    return are_points_equal(b1[0], b2[0]) and are_points_equal(b1[1], b2[1])
+
+
+def link_branches(b1, b2):
+    # Assumes that b1 < b2 with respect to x
+    return np.array([b1[0], b2[1]])
+
+
 def graph(image, path):
     # graph an image along with the generated representation
     a_g1 = image2a(image.convert("1"))
@@ -263,7 +319,7 @@ def graph_coords(image, path, coords,
     if graph_type == "line":
         ax2.plot(xs, ys_gen)
     elif graph_type == "scatter":
-        ax2.scatter(xs, ys)
+        ax2.scatter(xs, ys, plt.rcParams['lines.markersize'] ** 0.01)
     ax2.set_xlim([0, shape[1]])
     if bound_y:
         ax2.set_ylim([0, shape[0]])
