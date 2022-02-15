@@ -279,14 +279,43 @@ def eval_branch_acc(branch, coords, d_r_x, r_y):
     return score / branch_length(branch)
 
 
-def filter_branches(branches, coords, n, d_r_x=20, r_y=50):
-    bes = []
+def filter_branches(branches, a, n, r=5):
+    res = []
+    a = reduce_a(a, r)
+    print(a.shape)
     for b in branches:
-        bes.append([b, eval_branch_acc(b, coords, d_r_x, r_y)])
-    bes = list(sorted(bes, key=lambda be: be[1], reverse=True))
-    bes = bes[:n]
-    res = list(map(lambda be: be[0], bes))
-    return np.array(res)
+        print(b)
+        p = points2line(b[0], b[1])
+        x_0 = int(b[0][0])
+        x_f = int(b[1][0])
+        xs = list(range(x_0, x_f))
+        ys = p2ys(p, xs)
+        x_sum = 0
+        for i in range(0, len(xs)):
+            if a[int(ys[i])][xs[i]] == 1:
+                x_sum += 1
+        res.append([b, x_sum / len(xs)])
+
+    res = list(sorted(res, key=lambda rs: rs[1], reverse=True))[:n]
+    print(np.array(res))
+    return np.array(list(map(lambda rs: rs[0], res)))
+
+
+def reduce_a(a, r):
+    shape = a.shape
+    res = np.zeros(shape)
+
+    for i in range(shape[0]):
+        for j in range(0, shape[1]):
+            if a[i][j] == 1:
+                x_min = max(0, i - r)
+                x_max = min(a.shape[0], i + r)
+                y_min = max(0, j - r)
+                y_max = min(a.shape[1], j + r)
+                for x in range(x_min, x_max):
+                    for y in range(y_min, y_max):
+                        res[x][y] = 1
+    return res
 
 
 def graph(image, path):
@@ -301,8 +330,10 @@ def graph(image, path):
 def graph_branches(path):
     print("Generating first plot...")
     image = import_image(path)
-    coords = image2coords(image)
+    coords = image2coords(image.convert("1"))
     a_g1 = image2a(image.convert("1"))
+    a_g1 = array_map(bw2bin, a_g1)
+    a_g1 = array_map(flip, a_g1)
 
     shape = a_g1.shape
 
@@ -326,7 +357,7 @@ def graph_branches(path):
     print("Branches built!")
 
     print("Filtering branches...")
-    branches = filter_branches(branches, coords, len(corners) - 1)
+    branches = filter_branches(branches, a_g1, len(corners) - 1, r=10)
     print("Final branches ready!")
     print("Data ready!")
 
@@ -372,4 +403,45 @@ def graph_coords(image, path, coords,
     if lock_aspect_ratio:
         ax2.set_aspect('equal')
 
+    plt.show()
+
+
+def graph_grid(path):
+    image = import_image(path).convert("1")
+    a = image2a(image)
+    a = array_map(bw2bin, a)
+    a = array_map(flip, a)
+
+    shape = a.shape
+
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
+
+    print("Graph image")
+    img = mpimg.imread(path)
+    ax1.imshow(img)
+    ax1.set_xlim([0, shape[1]])
+    ax1.set_ylim([0, shape[0]])
+    ax1.invert_yaxis()
+
+    print("Graph array 1")
+    im = ax2.imshow(a)
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax2.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    print("Graph array 2")
+    a_3 = reduce_a(a, 3)
+    im = ax3.imshow(a_3)
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax3.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    print("Graph array 3")
+    a_10 = reduce_a(a, 20)
+    im = ax4.imshow(a_10)
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax4.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    fig.tight_layout()
     plt.show()
