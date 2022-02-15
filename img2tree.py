@@ -6,9 +6,8 @@ import matplotlib.image as mpimg
 
 
 class Root:
-    def __init__(self, start, end, r=0.0, branches: "Tree" = None):
-        self.start = start
-        self.end = end
+    def __init__(self, root, r=0.0, branches: "Tree" = None):
+        self.root = root
         self.r = r
         self.branches = branches
         if branches is None:
@@ -21,12 +20,12 @@ class Root:
         self.has_branches |= True
 
     def get_length(self):
-        return dist(self.start, self.end)
+        return branch_length(self.root)
 
 
 class Tree:
-    def __init__(self, split_point, r=0.0, branches: "(Tree, Tree)" = None):
-        self.split_point = split_point
+    def __init__(self, branch, r=0.0, branches: "(Tree, Tree)" = None):
+        self.branch = branch
         self.r = r
         self.branches = branches
         if branches is None:
@@ -38,19 +37,12 @@ class Tree:
         self.branches = branches
         self.has_branches = True
 
-    def length_top(self):
-        if self.has_branches:
-            res = dist(self.split_point, self.branches[0].split_point)
-        else:
-            res = 0.0
-        return res
+    def get_length(self):
+        return branch_length(self.branch)
 
-    def length_bot(self):
-        if self.has_branches:
-            res = dist(self.split_point, self.branches[1].split_point)
-        else:
-            res = 0.0
-        return res
+
+def branch_length(branch):
+    return dist(branch[0], branch[1])
 
 
 def import_image(path="images/g1.png"):
@@ -132,6 +124,10 @@ def image2line(image):
     return np.polyfit(xs, ys, 1)
 
 
+def points2line(p1, p2):
+    return np.polyfit([p1[0], p2[0]], [p1[1], p2[1]], 1)
+
+
 def image2coords(image):
     # convert an Image to black and white, binarize it, flip the values,
     # and convert to a list of coordinates where the value is 1
@@ -171,6 +167,11 @@ def bound_coords(coords, axis, c_min, c_max):
         res = list(filter((lambda c: c_min <= c[d] <= c_max), res))
 
     return np.array(res)
+
+
+def double_bound_coords(coords, c1, c2):
+    tmp_coords = bound_coords(coords, 'x', min(c1[0], c2[0]), max(c1[0], c2[0]))
+    return bound_coords(tmp_coords, 'y', min(c1[1], c2[1]), max(c1[1], c2[1]))
 
 
 def get_corners(path, graph_res=False):
@@ -232,6 +233,91 @@ def prune_corners(coords, prune, lazy=True):
     return np.array(list(map(lambda i: coords[i], indexes)))
 
 
+def gen_root(corners):
+    scs = list(sorted(corners, key=lambda c: c[0]))
+    return Root(scs[0], scs[1], branches=None)
+
+
+def gen_branches(corners, coords):
+    c_pairs = [(a, b) for a in corners for b in corners]
+    c_pairs = list(filter(lambda c: not are_points_equal(c[0], c[1]), c_pairs))
+    c_pairs = list(filter(lambda c: c[0][0] < c[1][0], c_pairs))
+    prs = []
+    for cp in c_pairs:
+        tmp_coords = bound_coords(coords, 'x', cp[0][0], cp[1][0])
+        xs, ys = split_coords(tmp_coords)
+        p = np.polyfit(xs, ys, 1)
+        prs.append([cp, abs(get_r2(p, tmp_coords))])
+    prs = list(sorted(prs, key=lambda pr: pr[1], reverse=False))
+    ps, _ = split_coords(prs)
+    return ps
+
+
+def are_points_equal(p1, p2):
+    return p1[0] == p2[0] and p1[1] == p2[1]
+
+
+def branch_midpoint(branch):
+    p = points2line(branch[0], branch[1])
+    dist_x = branch[1][0] - branch[0][0]
+    return np.array([0.5 * dist_x + branch[0][0], p[0] * (0.5 * dist_x + branch[0][0]) + p[1]])
+
+
+def is_coord_in_ellipse(coord, h, k, r_x, r_y):
+    a = pow(coord[0] - h, 2) / pow(r_x, 2)
+    b = pow(coord[1] - k, 2) / pow(r_y, 2)
+    return a + b <= 1
+
+
+def eval_branch_acc(branch, coords, d_r_x, r_y):
+    r_x = branch_length(branch) + d_r_x
+    origin = branch_midpoint(branch)
+    score = 0.0
+    for c in coords:
+        if is_coord_in_ellipse(c, origin[0], origin[1], r_x, r_y):
+            score += 1.0
+    return score / branch_length(branch)
+
+
+def filter_branches(branches, a, n, r=5):
+    res = []
+    a = reduce_a(a, r)
+    print(a.shape)
+    for b in branches:
+        print(b)
+        p = points2line(b[0], b[1])
+        x_0 = int(b[0][0])
+        x_f = int(b[1][0])
+        xs = list(range(x_0, x_f))
+        ys = p2ys(p, xs)
+        x_sum = 0
+        for i in range(0, len(xs)):
+            if a[int(ys[i])][xs[i]] == 1:
+                x_sum += 1
+        res.append([b, x_sum / len(xs)])
+
+    res = list(sorted(res, key=lambda rs: rs[1], reverse=True))[:n]
+    print(np.array(res))
+    return np.array(list(map(lambda rs: rs[0], res)))
+
+
+def reduce_a(a, r):
+    shape = a.shape
+    res = np.zeros(shape)
+
+    for i in range(shape[0]):
+        for j in range(0, shape[1]):
+            if a[i][j] == 1:
+                x_min = max(0, i - r)
+                x_max = min(a.shape[0], i + r)
+                y_min = max(0, j - r)
+                y_max = min(a.shape[1], j + r)
+                for x in range(x_min, x_max):
+                    for y in range(y_min, y_max):
+                        res[x][y] = 1
+    return res
+
+
 def graph(image, path):
     # graph an image along with the generated representation
     a_g1 = image2a(image.convert("1"))
@@ -239,6 +325,52 @@ def graph(image, path):
     res = array_map(flip, res)
     res = a2coords(res)
     graph_coords(image, path, res, True, True)
+
+
+def graph_branches(path):
+    print("Generating first plot...")
+    image = import_image(path)
+    coords = image2coords(image.convert("1"))
+    a_g1 = image2a(image.convert("1"))
+    a_g1 = array_map(bw2bin, a_g1)
+    a_g1 = array_map(flip, a_g1)
+
+    shape = a_g1.shape
+
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+
+    img = mpimg.imread(path)
+    ax1.imshow(img)
+    ax1.set_xlim([0, shape[1]])
+    ax1.set_ylim([0, shape[0]])
+    ax1.invert_yaxis()
+    print("First plot complete!")
+
+    print("Preparing data for second plot...")
+    print("Finding corners...")
+    corners = get_corners(path)
+    corners = prune_corners(corners, 20)
+    print("Corners ready!")
+
+    print("Building branches...")
+    branches = gen_branches(corners, coords)
+    print("Branches built!")
+
+    print("Filtering branches...")
+    branches = filter_branches(branches, a_g1, len(corners) - 1, r=10)
+    print("Final branches ready!")
+    print("Data ready!")
+
+    print("Generating second plot...")
+    for b in branches:
+        ax2.plot([b[0][0], b[1][0]], [b[0][1], b[1][1]])
+    ax2.set_xlim([0, shape[1]])
+    ax2.set_ylim([0, shape[0]])
+    ax2.invert_yaxis()
+    ax2.set_aspect('equal')
+    print("Second plot complete!")
+
+    plt.show()
 
 
 def graph_coords(image, path, coords,
@@ -263,7 +395,7 @@ def graph_coords(image, path, coords,
     if graph_type == "line":
         ax2.plot(xs, ys_gen)
     elif graph_type == "scatter":
-        ax2.scatter(xs, ys)
+        ax2.scatter(xs, ys, plt.rcParams['lines.markersize'] ** 0.01)
     ax2.set_xlim([0, shape[1]])
     if bound_y:
         ax2.set_ylim([0, shape[0]])
@@ -271,4 +403,45 @@ def graph_coords(image, path, coords,
     if lock_aspect_ratio:
         ax2.set_aspect('equal')
 
+    plt.show()
+
+
+def graph_grid(path):
+    image = import_image(path).convert("1")
+    a = image2a(image)
+    a = array_map(bw2bin, a)
+    a = array_map(flip, a)
+
+    shape = a.shape
+
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2)
+
+    print("Graph image")
+    img = mpimg.imread(path)
+    ax1.imshow(img)
+    ax1.set_xlim([0, shape[1]])
+    ax1.set_ylim([0, shape[0]])
+    ax1.invert_yaxis()
+
+    print("Graph array 1")
+    im = ax2.imshow(a)
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax2.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    print("Graph array 2")
+    a_3 = reduce_a(a, 3)
+    im = ax3.imshow(a_3)
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax3.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    print("Graph array 3")
+    a_10 = reduce_a(a, 20)
+    im = ax4.imshow(a_10)
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax4.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    fig.tight_layout()
     plt.show()
